@@ -1,43 +1,66 @@
-name: بناء وتصدير تطبيق الأندرويد
+name: Build Android APK
 
+# يتم تشغيل سير العمل عند الدفع (Push) على فرع main أو عند إنشاء طلب سحب (Pull Request)
 on:
   push:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً من موقع GitHub
 
 jobs:
-  build-android-apk:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 1. الاتصال برمز المشروع
-        uses: actions/checkout@v3
+    # 1. جلب كود المشروع من المستودع
+    - name: Checkout Cloud Code
+      uses: actions/checkout@v4
 
-      - name: 2. إعداد بيئة Java JDK 17
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: '17'
+    # 2. إعداد بيئة جافا (مهمة لـ Android SDK)
+    - name: Set up JDK 17
+      uses: actions/actions-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '17'
 
-      - name: 3. إعداد Android SDK و NDK
-        uses: android-actions/setup-android@v2
+    # 3. إعداد بيئة بايثون وتثبيت الملحقات
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
 
-      - name: 4. إعداد بيئة بايثون
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+    # 4. تثبيت الملحقات والأدوات المطلوبة لبناء الأندرويد (تثبيت Buildozer و Cython)
+    - name: Install Build Dependencies
+      run: |
+        pip install --upgrade pip
+        pip install buildozer cython
+        sudo apt-get update
+        sudo apt-get install -y ccache git libffi-dev libssl-dev missing-packages \
+        autoconf automake libtool pkg-config zlib1g-dev libgstreamer1.0-dev \
+        gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+        gstreamer1.0-plugins-ugly gstreamer1.0-libav libgstrtspserver-1.0-dev libx11-dev
 
-      - name: 5. تثبيت حزم التجميع
-        run: |
-          python -m pip install --upgrade pip
-          pip install flet buildozer cython
+    # 5. التخزين المؤقت لملفات الأندرويد SDK و Buildozer لتسريع عمليات البناء القادمة
+    - name: Cache Buildozer Android SDK
+      uses: actions/cache@v4
+      with:
+        path: .buildozer
+        key: ${{ runner.os }}-buildozer-${{ hashFiles('**/buildozer.spec') }}
+        restore-keys: |
+          ${{ runner.os }}-buildozer-
 
-      - name: 6. بناء وتصدير ملف الـ APK
-        run: |
-          run: flet build apk app/main_app.py --no-interactive
+    # 6. تشغيل عملية بناء التطبيق بصيغة APK (في وضع التطوير والتصحيح Debug)
+    - name: Build APK with Buildozer
+      run: |
+        yes | buildozer android debug
+      # ملاحظة: إذا كان مشروعك يحتاج لتشغيل سكربت build_apk.py بدلاً من Buildozer مباشرة،
+      # يمكنك استبدال الأمر أعلاه بـ: python kk/build_apk.py
 
-      - name: 7. رفع وحفظ ملف الـ APK الجاهز
-        uses: actions/upload-artifact@v4
-        with:
-          name: Baqiyat-Salihat-Official-Release-APK
-          path: build/apk/*.apk
+    # 7. رفع ملف الـ APK الناتج كأصل (Artifact) لكي تتمكن من تحميله
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-app-debug-apk
+        path: bin/*.apk
